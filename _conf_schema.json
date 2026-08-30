@@ -1,0 +1,91 @@
+{
+  "enabled": {
+    "description": "启用每日 OOTD",
+    "type": "bool",
+    "default": false,
+    "hint": "总开关。启用后按所选模式生成穿搭并注入上下文，每会话每天一次。"
+  },
+  "mode": {
+    "description": "数据来源模式",
+    "type": "string",
+    "default": "time_awareness",
+    "options": ["time_awareness", "random"],
+    "hint": "time_awareness：外接 time_awareness（时笺）的每日主题/状态色彩/日程生成；random：不依赖时笺，随机挑选主题/风格/日程自生成。"
+  },
+  "inject_enabled": {
+    "description": "注入 <OOTD> 到对话上下文",
+    "type": "bool",
+    "default": true,
+    "hint": "把当日穿搭追加到本轮临时内容（不写历史）。关闭后仍会后台生成缓存。"
+  },
+  "provider_id": {
+    "description": "生成模型",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider",
+    "hint": "OOTD 生成模型；留空用当前会话模型。"
+  },
+  "outfit_style_pool": {
+    "description": "穿搭风格池",
+    "type": "list",
+    "default": [
+      "知性学院风",
+      "街头休闲风",
+      "温柔淑女风",
+      "酷飒中性风",
+      "慵懒居家风",
+      "精致约会风",
+      "运动活力风",
+      "日系森女风",
+      "法式优雅风",
+      "韩系甜美风",
+      "复古文艺风",
+      "极简都市风"
+    ],
+    "hint": "一行一个风格，生成时从中挑选一个贴合主题/状态；留空回退内置 12 条。"
+  },
+  "random_theme_pool": {
+    "description": "随机模式主题池",
+    "type": "list",
+    "default": [
+      "演习日",
+      "宅家日",
+      "外出日",
+      "约会日",
+      "工作冲刺日",
+      "休闲放松日",
+      "社交日",
+      "创作日",
+      "运动日",
+      "出行日",
+      "整顿收纳日",
+      "探店日"
+    ],
+    "hint": "仅 random 模式生效：随机挑一个「今天是什么日子」的主题。留空回退内置主题池。"
+  },
+  "random_slots_pool": {
+    "description": "随机模式日程池",
+    "type": "list",
+    "default": [
+      "晨间散步",
+      "咖啡馆办公",
+      "下午茶",
+      "健身房训练",
+      "逛街",
+      "朋友聚餐",
+      "居家观影",
+      "图书馆自习",
+      "公园慢跑",
+      "超市采购",
+      "线上会议",
+      "手作/画画"
+    ],
+    "hint": "仅 random 模式生效：随机抽几条当日日程（仅活动名，不含严格时段）。留空不生成日程。"
+  },
+  "random_slots_count": {
+    "description": "随机模式日程条数",
+    "type": "int",
+    "default": 3,
+    "hint": "仅 random 模式生效：从日程池随机抽 0–6 条（0=不生成日程）。"
+  }
+}
