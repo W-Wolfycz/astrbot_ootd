@@ -58,7 +58,7 @@ from .ootd_standalone import resolve_standalone_identity
     "astrbot_ootd",
     "Wolfycz",
     "每日穿搭 OOTD：告诉角色今天穿什么（外接 time_awareness 或随机自生成）",
-    "1.0.0",
+    "1.0.1",
     "https://github.com/W-Wolfycz/astrbot_ootd",
 )
 class OotdPlugin(Star):
@@ -122,6 +122,40 @@ class OotdPlugin(Star):
         )
         parts.append(TextPart(text=block).mark_as_temp())
 
+    # ── 命令 ─────────────────────────────────────────────────────────
+
+    @filter.command("ootd")
+    async def query_ootd(self, event: AstrMessageEvent, sub: str = ""):
+        """查看今日穿搭；`/ootd new` 强制重新生成。"""
+        if not self._ootd_enabled():
+            yield event.plain_result("OOTD 功能未启用。")
+            return
+        umo = getattr(event, "unified_msg_origin", "") or ""
+        ctx = await self._resolve_identity(umo, event)
+        if ctx is None:
+            yield event.plain_result("无法解析当前角色，暂时无法提供穿搭。")
+            return
+        force_new = str(sub or "").strip().lower() == "new"
+        entry = None
+        if not force_new:
+            entry = get_cached_outfit(
+                self._ootd_cache_data(), ctx.persona_hash, ctx.today
+            )
+        if force_new or not (entry and entry.get("outfit")):
+            theme, style, slots = self._ootd_outfit_inputs_immediate(ctx)
+            try:
+                entry = await self._generate_and_cache(ctx, umo, theme, style, slots)
+            except Exception as exc:
+                logger.debug(
+                    f"[astrbot_ootd] 命令生成异常: {type(exc).__name__}: {exc}"
+                )
+                entry = None
+        if not entry or not entry.get("outfit"):
+            yield event.plain_result("今日穿搭生成失败，请稍后再试。")
+            return
+        style_text = entry.get("outfit_style") or "穿搭"
+        yield event.plain_result(f"今日穿搭（{style_text}）：\n{entry.get('outfit', '')}")
+
     async def _ootd_for_round(self, event: AstrMessageEvent) -> str | None:
         """返回本轮可注入的 OOTD 文本；缓存未命中时触发后台补生成。"""
         umo = getattr(event, "unified_msg_origin", "") or ""
@@ -167,37 +201,49 @@ class OotdPlugin(Star):
         task.add_done_callback(_done)
 
     async def _generate_ootd(self, ctx, umo: str) -> None:
-        """获取穿搭输入 → LLM 生成 → 校验重写 → 写缓存（两种模式共用）。"""
+        """cron/后台生成：TA 模式等待时笺就绪后读快照，再走生成+缓存。"""
         try:
             theme, style, slots = await self._ootd_outfit_inputs(ctx)
-            prompt = build_outfit_prompt(
-                persona_prompt=ctx.persona_prompt,
-                today=ctx.date,
-                theme=theme,
-                style=style,
-                slots_text=render_slots_text(slots),
-                style_pool=self._ootd_style_pool(),
-            )
-            provider_id = await self._ootd_provider_id(umo)
-            if not provider_id:
-                logger.debug("[astrbot_ootd] OOTD 无法确定 provider，放弃当日生成")
-                return
-            entry = await self._llm_outfit(prompt, provider_id)
-            if entry is None:
-                logger.debug("[astrbot_ootd] OOTD 生成失败，放弃当日")
-                return
-            cache = self._ootd_cache_data()
-            put_cached_outfit(cache, ctx.persona_hash, ctx.today, entry)
-            prune_outfit_cache(cache, ctx.date, OOTD_RETENTION_DAYS)
-            save_ootd_cache(str(self._ootd_cache_path()), cache)
-            logger.info(
-                f"[astrbot_ootd] OOTD 已生成: persona={ctx.short_hash()} "
-                f"style={entry.get('outfit_style')} len={len(entry.get('outfit', ''))}"
-            )
+            await self._generate_and_cache(ctx, umo, theme, style, slots)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.debug(f"[astrbot_ootd] OOTD 生成异常: {type(exc).__name__}: {exc}")
+
+    async def _generate_and_cache(
+        self,
+        ctx,
+        umo: str,
+        theme,
+        style,
+        slots,
+    ) -> dict | None:
+        """构造 prompt → LLM 生成 → 校验 → 写缓存；返回 entry 或 None。"""
+        prompt = build_outfit_prompt(
+            persona_prompt=ctx.persona_prompt,
+            today=ctx.date,
+            theme=theme,
+            style=style,
+            slots_text=render_slots_text(slots),
+            style_pool=self._ootd_style_pool(),
+        )
+        provider_id = await self._ootd_provider_id(umo)
+        if not provider_id:
+            logger.debug("[astrbot_ootd] OOTD 无法确定 provider，放弃当日生成")
+            return None
+        entry = await self._llm_outfit(prompt, provider_id)
+        if entry is None:
+            logger.debug("[astrbot_ootd] OOTD 生成失败，放弃当日")
+            return None
+        cache = self._ootd_cache_data()
+        put_cached_outfit(cache, ctx.persona_hash, ctx.today, entry)
+        prune_outfit_cache(cache, ctx.date, OOTD_RETENTION_DAYS)
+        save_ootd_cache(str(self._ootd_cache_path()), cache)
+        logger.info(
+            f"[astrbot_ootd] OOTD 已生成: persona={ctx.short_hash()} "
+            f"style={entry.get('outfit_style')} len={len(entry.get('outfit', ''))}"
+        )
+        return entry
 
     async def _ootd_outfit_inputs(self, ctx) -> tuple[str | None, str | None, list[dict]]:
         """按模式获取主题/状态色彩/日程：随机模式随机挑选，TA 模式读时笺快照。"""
@@ -210,6 +256,21 @@ class OotdPlugin(Star):
             )
         await self._ootd_wait_until_ready()
         return await self._ootd_read_snapshot_with_grace(ctx)
+
+    def _ootd_outfit_inputs_immediate(
+        self, ctx
+    ) -> tuple[str | None, str | None, list[dict]]:
+        """立即获取主题/状态色彩/日程（命令用）：TA 模式只读一次快照、不等待。"""
+        if self._ootd_mode() == "random":
+            return pick_random_boundary(
+                theme_pool=self._ootd_random_theme_pool(),
+                style_pool=self._ootd_style_pool(),
+                slots_pool=self._ootd_random_slots_pool(),
+                slots_count=self._ootd_random_slots_count(),
+            )
+        return read_outfit_snapshot(
+            self._ootd_ta_data_dir(), ctx.persona_hash, ctx.today
+        )
 
     async def _llm_outfit(self, prompt: str, provider_id: str) -> dict | None:
         """带原因重写 1 次；两次都不合协议则返回 None（当日放弃）。"""
