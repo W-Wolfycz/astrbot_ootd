@@ -1,5 +1,10 @@
 # 更新日志
 
+## 1.0.2 — 2026-09-03
+
+- **修复 time_awareness 集成**：不再直接 `from time_awareness...` import 私有模块（AstrBot 将插件加载为 `data.plugins.` 命名空间，直接 import 会在部署端 ModuleNotFoundError），改用 `get_registered_star` 取时笺公开的 `daily_schedule_store`
+- **修复 persona 解析**：conversation 的 `[%None]` 归一化为未指定并回退 provider 默认 persona，避免命令报「无法解析当前角色」
+
 ## 1.0.1 — 2026-08-31
 
 - **命令查询**：`/ootd` 查看今日穿搭（无缓存时立即生成并返回）；`/ootd new` 强制重新生成

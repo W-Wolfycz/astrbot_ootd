@@ -58,6 +58,8 @@ async def resolve_standalone_persona(
                 conversation_persona_id = (
                     getattr(conversation, "persona_id", None) or None
                 )
+                if conversation_persona_id == "[%None]":
+                    conversation_persona_id = None
         except Exception:
             conversation_persona_id = None
 

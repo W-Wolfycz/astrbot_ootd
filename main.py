@@ -58,7 +58,7 @@ from .ootd_standalone import resolve_standalone_identity
     "astrbot_ootd",
     "Wolfycz",
     "每日穿搭 OOTD：告诉角色今天穿什么（外接 time_awareness 或随机自生成）",
-    "1.0.1",
+    "1.0.2",
     "https://github.com/W-Wolfycz/astrbot_ootd",
 )
 class OotdPlugin(Star):
@@ -178,7 +178,7 @@ class OotdPlugin(Star):
             self.context,
             umo,
             event,
-            ta_data_dir=self._ootd_ta_data_dir(),
+            store=self._ootd_ta_store(),
             ta_instance=self._resolve_time_awareness(),
         )
 
@@ -269,7 +269,7 @@ class OotdPlugin(Star):
                 slots_count=self._ootd_random_slots_count(),
             )
         return read_outfit_snapshot(
-            self._ootd_ta_data_dir(), ctx.persona_hash, ctx.today
+            self._ootd_ta_store(), ctx.persona_hash, ctx.today
         )
 
     async def _llm_outfit(self, prompt: str, provider_id: str) -> dict | None:
@@ -362,13 +362,10 @@ class OotdPlugin(Star):
         """就绪时刻后短轮询读快照；时笺未按时生成则超时降级（无主题/风格）。"""
         if self._ootd_ready_minute() is None:
             return None, None, []
+        store = self._ootd_ta_store()
         for _attempt in range(10):
-            if has_today_snapshot(
-                self._ootd_ta_data_dir(), ctx.persona_hash, ctx.today
-            ):
-                return read_outfit_snapshot(
-                    self._ootd_ta_data_dir(), ctx.persona_hash, ctx.today
-                )
+            if has_today_snapshot(store, ctx.persona_hash, ctx.today):
+                return read_outfit_snapshot(store, ctx.persona_hash, ctx.today)
             await asyncio.sleep(60)
         return None, None, []
 
@@ -498,12 +495,16 @@ class OotdPlugin(Star):
             )
         return Path(base) / OOTD_CACHE_FILE_NAME
 
-    def _ootd_ta_data_dir(self) -> str:
-        try:
-            return str(StarTools.get_data_dir("time_awareness"))
-        except Exception:
-            base = Path(self.context.get_config().get("plugin.data_dir", "./data"))
-            return str(base / "plugin_data" / "time_awareness")
+    def _ootd_ta_store(self):
+        """从 time_awareness 实例取公开的 daily_schedule_store（不直接 import 私有模块）。"""
+        ta = self._resolve_time_awareness()
+        for candidate in (ta, getattr(ta, "star", None) if ta is not None else None):
+            if candidate is None:
+                continue
+            store = getattr(candidate, "daily_schedule_store", None)
+            if store is not None and callable(getattr(store, "load", None)):
+                return store
+        return None
 
     def _ootd_cache_data(self) -> dict:
         if self._ootd_cache is None:

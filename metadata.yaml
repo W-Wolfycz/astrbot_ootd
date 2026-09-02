@@ -1,6 +1,6 @@
 name: astrbot_ootd
 display_name: "穿什么？"
-version: 1.0.1
+version: 1.0.2
 desc: "每日穿搭 OOTD：告诉角色今天穿什么（外接 time_awareness 或随机自生成）。"
 author: Wolfycz
 repo: "https://github.com/W-Wolfycz/astrbot_ootd"

@@ -1,11 +1,11 @@
 """每日 OOTD 的时笺（time_awareness）上下文适配层。
 
-直读时笺私有模块：``DailyScheduleSnapshotStore``（锁内加载、HMAC）与
-``resolve_effective_persona``（同源人格解析）。这是跨包 import 私有模块，仅自用。
+经 time_awareness 实例公开的 ``daily_schedule_store`` 读写快照与 HMAC，不直接
+import 其私有模块；Persona 解析复用独立模式的 ``resolve_standalone_persona``。
 
 纯函数（find_today_snapshot / extract_boundary_fields / render_slots_text /
-ootd_ready_minute）不依赖 astrbot，可本地用假 store 单测；时笺未安装时模块级
-import 会被吞掉并置 None，``resolve_ootd_identity`` 返回 None（OOTD 静默关闭）。
+ootd_ready_minute）不依赖 astrbot，可本地用假 store 单测；时笺不可用时
+``resolve_ootd_identity`` 返回 None（OOTD 静默关闭）。
 
 不接天气：OOTD 不实现、不消费天气，生成直接按「当季通配」降级。
 """
@@ -14,13 +14,6 @@ from __future__ import annotations
 
 import datetime
 from typing import Any
-
-try:  # pragma: no cover - 部署端为真，本地测试环境无 astrbot/time_awareness
-    from time_awareness.core.daily_schedule_store import DailyScheduleSnapshotStore
-    from time_awareness.integrations.persona_resolver import resolve_effective_persona
-except Exception:  # 时笺未安装 / 依赖缺失
-    DailyScheduleSnapshotStore = None  # type: ignore[assignment]
-    resolve_effective_persona = None  # type: ignore[assignment]
 
 
 class OutfitContext:
@@ -163,7 +156,7 @@ async def resolve_ootd_identity(
     umo: str,
     event=None,
     *,
-    ta_data_dir: str = "",
+    store=None,
     ta_instance=None,
     now: datetime.datetime | None = None,
 ) -> OutfitContext | None:
@@ -172,30 +165,25 @@ async def resolve_ootd_identity(
     快照在生成任务等待时笺就绪后由 ``read_outfit_snapshot`` 另行读取。
     时笺不可用/无人格/无 secret 时返回 None。
     """
-    if resolve_effective_persona is None or DailyScheduleSnapshotStore is None:
+    if store is None:
         return None
 
+    # Persona 解析复用独立模式（把 conversation 的 "[%None]" 归一化为未指定，
+    # 回退 provider 默认 persona），避免时笺 resolver 对 "[%None]" 返回空。
+    from .ootd_standalone import extract_persona_prompt, resolve_standalone_persona
+
     try:
-        persona_id, persona = await resolve_effective_persona(context, umo, event)
+        persona_id, persona = await resolve_standalone_persona(context, umo, event)
     except Exception:
         return None
     if not persona_id:
         return None
 
-    prompt = ""
-    if persona is not None:
-        try:
-            if isinstance(persona, dict):
-                prompt = (persona.get("prompt") or "").strip()
-            else:
-                prompt = (getattr(persona, "prompt", "") or "").strip()
-        except Exception:
-            prompt = ""
+    prompt = extract_persona_prompt(persona)
 
     today = (now or resolve_now(ta_instance)).date()
 
     try:
-        store = DailyScheduleSnapshotStore(ta_data_dir)
         if not store.load():
             return None
         persona_hash = store.persona_hash(persona_id)
@@ -211,15 +199,14 @@ async def resolve_ootd_identity(
 
 
 def read_outfit_snapshot(
-    ta_data_dir: str,
+    store,
     persona_hash: str,
     local_date,
 ) -> tuple[str | None, str | None, list[dict]]:
     """读时笺当日 ready 快照的原始字段；无快照返回 ``(None, None, [])``。"""
-    if DailyScheduleSnapshotStore is None:
+    if store is None:
         return None, None, []
     try:
-        store = DailyScheduleSnapshotStore(ta_data_dir)
         if not store.load():
             return None, None, []
         snapshot = find_today_snapshot(store, persona_hash, local_date)
@@ -230,12 +217,11 @@ def read_outfit_snapshot(
     return extract_boundary_fields(snapshot)
 
 
-def has_today_snapshot(ta_data_dir: str, persona_hash: str, local_date) -> bool:
+def has_today_snapshot(store, persona_hash: str, local_date) -> bool:
     """时笺是否已生成该 Persona 当天的 ready 快照（供就绪轮询判断）。"""
-    if DailyScheduleSnapshotStore is None:
+    if store is None:
         return False
     try:
-        store = DailyScheduleSnapshotStore(ta_data_dir)
         if not store.load():
             return False
         return find_today_snapshot(store, persona_hash, local_date) is not None

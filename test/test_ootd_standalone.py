@@ -84,6 +84,12 @@ def test_resolve_standalone_persona_none_when_no_conversation():
     assert context.persona_manager.last_kwargs["conversation_persona_id"] is None
 
 
+def test_resolve_standalone_persona_normalizes_none_marker():
+    context = _FakeContext(conversation_persona_id="[%None]", resolved="p_demo", persona={})
+    _resolve(context)
+    assert context.persona_manager.last_kwargs["conversation_persona_id"] is None
+
+
 def test_resolve_standalone_persona_returns_empty_on_none_resolved():
     for resolved in (None, "[%None]", ""):
         context = _FakeContext(conversation_persona_id=None, resolved=resolved, persona={})
