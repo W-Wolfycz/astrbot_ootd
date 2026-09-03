@@ -184,8 +184,6 @@ async def resolve_ootd_identity(
     today = (now or resolve_now(ta_instance)).date()
 
     try:
-        if not store.load():
-            return None
         persona_hash = store.persona_hash(persona_id)
     except Exception:
         # secret 不可得 / 时笺数据目录不可用 → 无法计算 HMAC 缓存键，OOTD 关闭。
@@ -207,8 +205,6 @@ def read_outfit_snapshot(
     if store is None:
         return None, None, []
     try:
-        if not store.load():
-            return None, None, []
         snapshot = find_today_snapshot(store, persona_hash, local_date)
     except Exception:
         return None, None, []
@@ -222,8 +218,6 @@ def has_today_snapshot(store, persona_hash: str, local_date) -> bool:
     if store is None:
         return False
     try:
-        if not store.load():
-            return False
         return find_today_snapshot(store, persona_hash, local_date) is not None
     except Exception:
         return False

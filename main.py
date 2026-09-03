@@ -58,7 +58,7 @@ from .ootd_standalone import resolve_standalone_identity
     "astrbot_ootd",
     "Wolfycz",
     "每日穿搭 OOTD：告诉角色今天穿什么（外接 time_awareness 或随机自生成）",
-    "1.0.2",
+    "1.0.3",
     "https://github.com/W-Wolfycz/astrbot_ootd",
 )
 class OotdPlugin(Star):
@@ -502,7 +502,7 @@ class OotdPlugin(Star):
             if candidate is None:
                 continue
             store = getattr(candidate, "daily_schedule_store", None)
-            if store is not None and callable(getattr(store, "load", None)):
+            if store is not None and callable(getattr(store, "get", None)):
                 return store
         return None
 

@@ -1,5 +1,9 @@
 # 更新日志
 
+## 1.0.3 — 2026-09-03
+
+- **修正 store 消费**：改用只读 `get` 校验时笺 store，不再重复调用 `load()`（时笺初始化时已加载）
+
 ## 1.0.2 — 2026-09-03
 
 - **修复 time_awareness 集成**：不再直接 `from time_awareness...` import 私有模块（AstrBot 将插件加载为 `data.plugins.` 命名空间，直接 import 会在部署端 ModuleNotFoundError），改用 `get_registered_star` 取时笺公开的 `daily_schedule_store`
