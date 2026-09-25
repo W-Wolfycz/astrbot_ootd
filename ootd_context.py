@@ -168,8 +168,7 @@ async def resolve_ootd_identity(
     if store is None:
         return None
 
-    # Persona 解析复用独立模式（把 conversation 的 "[%None]" 归一化为未指定，
-    # 回退 provider 默认 persona），避免时笺 resolver 对 "[%None]" 返回空。
+    # Persona 解析复用独立模式（按 UMO 命中 conf 的人格），不直接 import 时笺私有模块。
     from .ootd_standalone import extract_persona_prompt, resolve_standalone_persona
 
     try:

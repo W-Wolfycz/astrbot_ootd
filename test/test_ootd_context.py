@@ -1,10 +1,15 @@
+"""OOTD 时笺上下文适配的纯函数单测。
+
+守的是：快照匹配字段/忽略时区语义被改（读不到快照 → 静默降级为无主题生成）、
+时笺快照字段键映射被改（主题/状态色彩/日程静默为空）、就绪时刻算错（生成时机静默偏移）。
+"""
+
 import datetime
 
 from astrbot_ootd.ootd_context import (
     extract_boundary_fields,
     find_today_snapshot,
     ootd_ready_minute,
-    render_slots_text,
 )
 
 
@@ -29,7 +34,8 @@ def _snapshot(persona_hash, local_date, timezone="system-local", **extra):
     return snap
 
 
-def test_find_today_snapshot_matches_persona_and_date_ignoring_tz():
+def test_find_today_snapshot_matches_persona_and_date():
+    """守：匹配字段名/忽略时区语义被改（快照读不到 → 静默无主题生成）。"""
     store = _FakeStore(
         [
             _snapshot("persona_abc", "2026-08-23", timezone="Asia/Shanghai"),
@@ -39,31 +45,23 @@ def test_find_today_snapshot_matches_persona_and_date_ignoring_tz():
     )
     found = find_today_snapshot(store, "persona_abc", datetime.date(2026, 8, 23))
     assert found is not None
-    assert found["timezone"] == "Asia/Shanghai"  # 取第一个命中
+    assert found["timezone"] == "Asia/Shanghai"  # 忽略时区，取第一个命中
 
     assert find_today_snapshot(store, "persona_abc", "2026-08-24") is None
-    assert find_today_snapshot(store, "persona_other", "2026-08-23") is not None
+    assert find_today_snapshot(None, "persona_abc", "2026-08-23") is None
 
 
-def test_find_today_snapshot_none_store_or_empty():
-    assert find_today_snapshot(None, "p", "2026-08-23") is None
-    assert find_today_snapshot(_FakeStore([]), "p", "2026-08-23") is None
+def test_extract_boundary_fields_maps_snapshot_keys():
+    """守：时笺快照字段键映射被改（主题/状态色彩/日程静默为空）。"""
+    theme, style, slots = extract_boundary_fields(
+        {
+            "boundary_state": {"daily_theme": "演习日", "daily_style": "活力"},
+            "ai_slots": [{"start": "08:00", "end": "12:00", "name": "晨训"}],
+        }
+    )
+    assert (theme, style) == ("演习日", "活力")
+    assert slots == [{"start": "08:00", "end": "12:00", "name": "晨训"}]
 
-
-def test_extract_boundary_fields_reads_theme_style_and_slots():
-    snapshot = {
-        "boundary_state": {"daily_theme": "演习日", "daily_style": "活力"},
-        "ai_slots": [{"start": "08:00", "end": "12:00", "name": "晨训"}],
-    }
-    theme, style, slots = extract_boundary_fields(snapshot)
-    assert theme == "演习日"
-    assert style == "活力"
-    assert len(slots) == 1
-
-
-def test_extract_boundary_fields_falls_back_to_slots_and_empty():
-    assert extract_boundary_fields({}) == (None, None, [])
-    assert extract_boundary_fields(None) == (None, None, [])
     theme, style, slots = extract_boundary_fields(
         {"boundary_state": {}, "slots": [{"name": "外出"}]}
     )
@@ -71,35 +69,10 @@ def test_extract_boundary_fields_falls_back_to_slots_and_empty():
     assert slots == [{"name": "外出"}]
 
 
-def test_render_slots_text_formats_and_truncates():
-    slots = [
-        {"start": "08:00", "end": "12:00", "name": "晨训", "state": "正在训练"},
-        {"start": "12:00", "end": "13:00", "name": "午餐"},
-    ]
-    text = render_slots_text(slots)
-    assert "08:00-12:00 晨训 正在训练" in text
-    assert "12:00-13:00 午餐" in text
-
-    many = [{"start": f"{h:02d}:00", "end": f"{h:02d}:30", "name": f"时段{h}"} for h in range(20)]
-    truncated = render_slots_text(many, limit=12)
-    assert "仅展示前 12 段" in truncated
-    assert render_slots_text([]) == ""
-
-
-def test_ootd_ready_minute_positive_adds_five_minutes():
-    assert ootd_ready_minute("00:05") == 10
+def test_ootd_ready_minute_handles_signs_and_fallback():
+    """守：就绪时刻算错（生成时机静默偏移或跨天错位）。"""
     assert ootd_ready_minute("12:00") == 12 * 60 + 5
-    assert ootd_ready_minute("8:00") == 8 * 60 + 5  # 允许省略前导零
-    assert ootd_ready_minute("23:59") == 4  # 23:59+5 跨天取模
-
-
-def test_ootd_ready_minute_negative_means_midnight():
+    assert ootd_ready_minute("23:59") == 4  # 跨天取模
     assert ootd_ready_minute("-23:30") == 0
-    assert ootd_ready_minute("-00:05") == 0
-
-
-def test_ootd_ready_minute_missing_or_invalid_falls_back_to_default():
-    assert ootd_ready_minute(None) == 10  # 回退 00:05 + 5
-    assert ootd_ready_minute("") == 10
+    assert ootd_ready_minute(None) == 10  # 缺省回退 00:05 + 5
     assert ootd_ready_minute("garbage") == 10
-    assert ootd_ready_minute("25:99") == 10

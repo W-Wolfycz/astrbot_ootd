@@ -1,7 +1,7 @@
 """OOTD 独立（随机）模式的 Persona 解析，不依赖 time_awareness。
 
 随机模式复用 AstrBot 自带的 PersonaManager / ConversationManager 解析当前生效
-Persona：session 强制 > conversation > provider 默认。身份键用
+Persona：session 强制 > conversation > UMO 命中 conf。身份键用
 ``standalone_persona_hash`` 生成稳定匿名键，缓存不落原始 persona_id；本模块
 不 import 时笺任何符号，时笺未安装时随机模式仍可用。
 """
@@ -43,7 +43,7 @@ async def resolve_standalone_persona(
     """按「session 强制 > conversation > provider 默认」解析当前生效 Persona。
 
     ``None`` / ``[%None]`` / 异常返回 ``("", None)``；没有 conversation id 时
-    自然降级到会话配置默认值，不主动创建 conversation。
+    自然降级到该 UMO 命中 conf 的人格，不主动创建 conversation。
     """
     try:
         conversation_persona_id = None
@@ -58,18 +58,13 @@ async def resolve_standalone_persona(
                 conversation_persona_id = (
                     getattr(conversation, "persona_id", None) or None
                 )
-                if conversation_persona_id == "[%None]":
-                    conversation_persona_id = None
         except Exception:
             conversation_persona_id = None
 
-        config = context.get_config(umo=umo) or {}
-        provider_settings = config.get("provider_settings", {}) or {}
         resolved, persona, _, _ = await context.persona_manager.resolve_selected_persona(
             umo=umo,
             conversation_persona_id=conversation_persona_id,
             platform_name=_platform_name(context, umo, event),
-            provider_settings=provider_settings,
         )
         if not resolved or resolved == "[%None]":
             return "", None

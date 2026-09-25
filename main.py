@@ -33,11 +33,13 @@ from .ootd import (
     OOTD_RETENTION_DAYS,
     OOTD_SYSTEM_PROMPT,
     build_outfit_prompt,
+    format_log_prefix,
     get_cached_outfit,
     load_ootd_cache,
     normalize_outfit_entry,
     parse_outfit_response,
     pick_random_boundary,
+    platform_id_of,
     prune_outfit_cache,
     put_cached_outfit,
     save_ootd_cache,
@@ -58,7 +60,7 @@ from .ootd_standalone import resolve_standalone_identity
     "astrbot_ootd",
     "Wolfycz",
     "每日穿搭 OOTD：告诉角色今天穿什么（外接 time_awareness 或随机自生成）",
-    "1.0.3",
+    "1.0.4",
     "https://github.com/W-Wolfycz/astrbot_ootd",
 )
 class OotdPlugin(Star):
@@ -71,7 +73,7 @@ class OotdPlugin(Star):
         self._ootd_tasks: set[asyncio.Task] = set()
         self._ootd_daily_task: asyncio.Task | None = None
         logger.info(
-            f"[astrbot_ootd] loaded | enabled={self._ootd_enabled()} "
+            f"{self._tag()} loaded | enabled={self._ootd_enabled()} "
             f"mode={self._ootd_mode()}"
         )
 
@@ -109,7 +111,10 @@ class OotdPlugin(Star):
         try:
             outfit = await self._ootd_for_round(event)
         except Exception as exc:
-            logger.debug(f"[astrbot_ootd] OOTD 注入失败: {type(exc).__name__}: {exc}")
+            logger.debug(
+                f"{self._tag(platform_id_of(umo))} OOTD 注入失败: "
+                f"{type(exc).__name__}: {exc}"
+            )
             return
         if not outfit or not self._ootd_inject_enabled():
             return
@@ -147,7 +152,8 @@ class OotdPlugin(Star):
                 entry = await self._generate_and_cache(ctx, umo, theme, style, slots)
             except Exception as exc:
                 logger.debug(
-                    f"[astrbot_ootd] 命令生成异常: {type(exc).__name__}: {exc}"
+                    f"{self._tag(platform_id_of(umo))} 命令生成异常: "
+                    f"{type(exc).__name__}: {exc}"
                 )
                 entry = None
         if not entry or not entry.get("outfit"):
@@ -195,7 +201,8 @@ class OotdPlugin(Star):
             self._ootd_tasks.discard(t)
             if not t.cancelled() and t.exception() is not None:
                 logger.debug(
-                    f"[astrbot_ootd] OOTD 后台生成异常: {type(t.exception()).__name__}"
+                    f"{self._tag(platform_id_of(umo))} OOTD 后台生成异常: "
+                    f"{type(t.exception()).__name__}"
                 )
 
         task.add_done_callback(_done)
@@ -208,7 +215,10 @@ class OotdPlugin(Star):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.debug(f"[astrbot_ootd] OOTD 生成异常: {type(exc).__name__}: {exc}")
+            logger.debug(
+                f"{self._tag(platform_id_of(umo))} OOTD 生成异常: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
     async def _generate_and_cache(
         self,
@@ -229,18 +239,18 @@ class OotdPlugin(Star):
         )
         provider_id = await self._ootd_provider_id(umo)
         if not provider_id:
-            logger.debug("[astrbot_ootd] OOTD 无法确定 provider，放弃当日生成")
+            logger.debug(f"{self._tag(platform_id_of(umo))} OOTD 无法确定 provider，放弃当日生成")
             return None
         entry = await self._llm_outfit(prompt, provider_id)
         if entry is None:
-            logger.debug("[astrbot_ootd] OOTD 生成失败，放弃当日")
+            logger.debug(f"{self._tag(platform_id_of(umo))} OOTD 生成失败，放弃当日")
             return None
         cache = self._ootd_cache_data()
         put_cached_outfit(cache, ctx.persona_hash, ctx.today, entry)
         prune_outfit_cache(cache, ctx.date, OOTD_RETENTION_DAYS)
         save_ootd_cache(str(self._ootd_cache_path()), cache)
         logger.info(
-            f"[astrbot_ootd] OOTD 已生成: persona={ctx.short_hash()} "
+            f"{self._tag(platform_id_of(umo))} OOTD 已生成: persona={ctx.short_hash()} "
             f"style={entry.get('outfit_style')} len={len(entry.get('outfit', ''))}"
         )
         return entry
@@ -283,7 +293,9 @@ class OotdPlugin(Star):
                     system_prompt=OOTD_SYSTEM_PROMPT,
                 )
             except Exception as exc:
-                logger.debug(f"[astrbot_ootd] OOTD LLM 调用失败: {type(exc).__name__}: {exc}")
+                logger.debug(
+                    f"{self._tag()} OOTD LLM 调用失败: {type(exc).__name__}: {exc}"
+                )
                 return None
             if not resp or getattr(resp, "role", "") != "assistant":
                 return None
@@ -307,7 +319,10 @@ class OotdPlugin(Star):
         try:
             return (await self.context.get_current_chat_provider_id(umo=umo) or "").strip()
         except Exception as exc:
-            logger.debug(f"[astrbot_ootd] OOTD 获取会话 provider 失败: {type(exc).__name__}: {exc}")
+            logger.debug(
+                f"{self._tag(platform_id_of(umo))} OOTD 获取会话 provider 失败: "
+                f"{type(exc).__name__}: {exc}"
+            )
             return ""
 
     def _ootd_ready_minute(self) -> int | None:
@@ -352,7 +367,7 @@ class OotdPlugin(Star):
         if ready <= now:
             return
         logger.debug(
-            f"[astrbot_ootd] OOTD 等待时笺就绪，睡到 {ready.strftime('%H:%M')}"
+            f"{self._tag()} OOTD 等待时笺就绪，睡到 {ready.strftime('%H:%M')}"
         )
         await asyncio.sleep((ready - now).total_seconds())
 
@@ -400,7 +415,7 @@ class OotdPlugin(Star):
             raise
         except Exception as exc:
             logger.debug(
-                f"[astrbot_ootd] OOTD 每日循环异常: {type(exc).__name__}: {exc}"
+                f"{self._tag()} OOTD 每日循环异常: {type(exc).__name__}: {exc}"
             )
 
     async def _ootd_generate_known_sessions(self) -> None:
@@ -417,11 +432,13 @@ class OotdPlugin(Star):
                 raise
             except Exception as exc:
                 logger.debug(
-                    f"[astrbot_ootd] OOTD 为会话生成失败: {type(exc).__name__}: {exc}"
+                    f"{self._tag(platform_id_of(umo))} OOTD 为会话生成失败: "
+                    f"{type(exc).__name__}: {exc}"
                 )
         if generated:
             logger.info(
-                f"[astrbot_ootd] OOTD 每日扫描完成: generated={generated} sessions={len(sessions)}"
+                f"{self._tag()} OOTD 每日扫描完成: "
+                f"generated={generated} sessions={len(sessions)}"
             )
 
     async def _ootd_generate_for_session(self, umo: str) -> bool:
@@ -443,6 +460,11 @@ class OotdPlugin(Star):
 
     def _ootd_config(self) -> dict:
         return self.config if isinstance(self.config, dict) else {}
+
+    def _tag(self, platform_id: str = "") -> str:
+        """日志前缀：模块名恒在，`log_with_bot_id` 开启且有 platform_id 时并存。"""
+        log_with_bot_id = bool(self._ootd_config().get("log_with_bot_id", False))
+        return format_log_prefix(log_with_bot_id, platform_id)
 
     def _ootd_enabled(self) -> bool:
         return bool(self._ootd_config().get("enabled", False))
@@ -512,7 +534,7 @@ class OotdPlugin(Star):
         return self._ootd_cache
 
     def _resolve_time_awareness(self):
-        """返回已激活的 time_awareness 实例（供读取其配置与运行时 now）。"""
+        """返回已激活的 time_awareness 实例（供读取其配置、运行时 now 与快照 store）。"""
         try:
             star = self.context.get_registered_star("time_awareness")
             if star is None or not bool(getattr(star, "activated", True)):
@@ -522,10 +544,15 @@ class OotdPlugin(Star):
                 getattr(star, "star", None),
                 getattr(star, "star_cls", None),
             ):
-                if candidate is not None and callable(
-                    getattr(candidate, "create_external_task", None)
+                if candidate is None:
+                    continue
+                # 按实际依赖探测：配置 + 运行时 now + 快照 store（不用已移除的能力）
+                if (
+                    getattr(candidate, "config", None) is not None
+                    and getattr(candidate, "time_context", None) is not None
+                    and getattr(candidate, "daily_schedule_store", None) is not None
                 ):
                     return candidate
         except Exception as exc:
-            logger.debug(f"[astrbot_ootd] 查询 time_awareness 失败: {exc}")
+            logger.debug(f"{self._tag()} 查询 time_awareness 失败: {exc}")
         return None

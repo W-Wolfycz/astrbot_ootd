@@ -87,5 +87,11 @@
     "type": "int",
     "default": 3,
     "hint": "仅 random 模式生效：从日程池随机抽 0–6 条（0=不生成日程）。"
+  },
+  "log_with_bot_id": {
+    "description": "日志区分机器人实例",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后日志前缀附加平台实例标识（[astrbot_ootd][platform:{platform_id}]），多 Bot 环境便于定位。"
   }
 }

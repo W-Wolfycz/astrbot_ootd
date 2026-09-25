@@ -15,9 +15,23 @@ from typing import Any
 
 import yaml
 
+LOG_TAG = "astrbot_ootd"
+
 OOTD_CACHE_SCHEMA_VERSION = 1
 OOTD_CACHE_FILE_NAME = "ootd.yaml"
 OOTD_RETENTION_DAYS = 30
+
+
+def format_log_prefix(log_with_bot_id: bool, platform_id: str = "") -> str:
+    """日志前缀：模块名恒在，启用后追加平台实例标识（并存形式）。"""
+    if log_with_bot_id and platform_id:
+        return f"[{LOG_TAG}][platform:{platform_id}]"
+    return f"[{LOG_TAG}]"
+
+
+def platform_id_of(umo: str) -> str:
+    """从 UMO（``platform_id:message_type:session_id``）取平台实例标识。"""
+    return str(umo or "").split(":", 1)[0]
 
 # 穿搭风格池（默认 12 条）
 DEFAULT_OUTFIT_STYLE_POOL = [

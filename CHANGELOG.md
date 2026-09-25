@@ -1,5 +1,12 @@
 # 更新日志
 
+## 1.0.4 — 2026-09-17
+
+- **修复 time_awareness 探针**：`_resolve_time_awareness` 改用实际依赖（`config`/`time_context`/`daily_schedule_store`）判定实例，不再依赖已移除的 `create_external_task`，避免 TA 模式整体降级
+- **修正 persona 解析**：不再读/传已废弃的 `provider_settings`（该键已迁移到 `agent_runner`），`[%None]` 按「显式无人格」语义原样处理
+- **日志区分 Bot 实例**：新增顶层 `log_with_bot_id` 配置，开启后前缀为 `[astrbot_ootd][platform:{platform_id}]`
+- **测试精简**：按「改错了一眼看不出来」口径把 27 项压到 11 项，并逐条变异验证
+
 ## 1.0.3 — 2026-09-03
 
 - **修正 store 消费**：改用只读 `get` 校验时笺 store，不再重复调用 `load()`（时笺初始化时已加载）
